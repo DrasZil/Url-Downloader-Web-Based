@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- Meta tags for character encoding and responsive design -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- Page title -->
+    <title>URL Downloader</title>
+    
+    <!-- Google font for styling -->
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap" rel="stylesheet"></noscript>
+    
+    
+    <!-- Link to external CSS for page styling -->
+   <link rel="stylesheet" href="{{ url_for('static', filename='Dl_Web.css') }}">
+
+
+</head>
+
+<body>
+    <div class="container">
+        <!-- Navbar -->
+        <nav class="navbar" role="navigation" aria-label="Main navigation">
+            <div class="nav-top">
+                <div class="nav-brand">📁 URL Downloader</div>
+                <button class="nav-toggle" onclick="toggleNav()" aria-label="Toggle navigation">☰</button>
+            </div>
+           
+            <!-- Breadcrumb navigation -->
+            <div class="breadcrumb" id="nav-links">
+                <a href="#">Home</a>
+                <span></span>
+                <a href="{{ url_for('shortener') }}">URL Shortener</a>
+                <span></span>
+                <span class="current" aria-current="page">URL Downloader</span>
+            </div>
+        </nav>
+
+        <!-- Main content -->
+        <h1>🎥 Smart Video Downloader</h1>
+        
+        <!-- Input group for URL -->
+        <div class="input-group">
+            <label for="url">📎 Enter video URL:</label>
+            <input type="text" id="url" placeholder="Enter video URL" aria-required="true">
+            <button onclick="fetchFormats()" id="downloadvideobtn">🔍 Fetch Formats</button>
+                  <!-- Force download button (hidden by default) -->
+            <button id="force-download" class="force-btn" style="display:none;" onclick="forceDownload()">🚀 Force Download</button>
+        </div>
+        
+        <!-- Thumbnail and formats display area -->
+        <div id="thumbnail" class="thumbnail-wrapper" role="region" aria-live="polite"></div>
+        <div id="formats" role="region" aria-live="polite"></div>
+        <div id="download-status" class="status" role="status" aria-live="polite"></div>
+    </div>
+
+    <!-- Loading overlay (hidden by default) -->
+    <div id="loading" class="loading-overlay" style="display: none;" role="alert" aria-busy="true">
+        <div class="loading-spinner" aria-hidden="true"></div>
+        <p id="progress-text">Loading</p>
+        <div class="progress-bar-container" id="progress-container" style="display: none;">
+            <div id="progress-bar" class="progress-bar"></div>
+        </div>
+    
+    </div>
+
+  
+
+    <!-- JavaScript code for video fetching and downloading logic -->
+    <script defer>
+        let isDownloading = false;
+
+        // Escape HTML to prevent XSS
+        function escapeHtml(text) {
+            const div = document.createElement("div");
+            div.innerText = text;
+            return div.innerHTML;
+        }
+
+        function fetchFormats() {
+            const urlInput = document.getElementById("url");
+            const url = urlInput.value.trim();
+
+            if (!url) {
+                alert("⚠️ Please enter a video URL.");
+                urlInput.focus();
+                return;
+            }
+
+            const fetchBtn = document.getElementById("downloadvideobtn");
+            fetchBtn.disabled = true;
+            document.getElementById("formats").innerHTML = "";
+            document.getElementById("thumbnail").innerHTML = "";
+            document.getElementById("download-status").innerText = "";
+            document.getElementById("loading").style.display = "flex";
+            document.getElementById("progress-text").innerText = "🔍 Fetching formats...";
+            document.getElementById("progress-bar").style.width = "0%";
+
+            fetch("/get_formats", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ url: url })
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById("loading").style.display = "none";
+                fetchBtn.disabled = false;
+
+                const formatsDiv = document.getElementById("formats");
+
+                if (data.thumbnail) {
+                    document.getElementById("thumbnail").innerHTML = `<img src="${escapeHtml(data.thumbnail)}" class="thumbnail" alt="Video thumbnail">`;
+                }
+
+                const row = document.createElement("div");
+                row.style.display = "flex";
+                row.style.justifyContent = "center";
+                row.style.gap = "20px";
+                row.style.marginTop = "10px";
+
+                // Video section
+                const videoWrapper = document.createElement("div");
+                const videoLabel = document.createElement("label");
+                videoLabel.innerText = "🎞️ Video:";
+                const videoSelect = document.createElement("select");
+                videoSelect.id = "video-format-select";
+
+                let noVideoAvailable = false;
+
+                if (data.video && data.video.video.length > 0) {
+                    data.video.video.forEach(format => {
+                        const option = document.createElement("option");
+                        option.value = escapeHtml(format.format_id);
+                        option.text = `${escapeHtml(format.resolution || format.ext)} (${escapeHtml(format.size || "?")})`;
+                        videoSelect.appendChild(option);
+                    });
+                } else {
+                    const option = document.createElement("option");
+                    option.disabled = true;
+                    option.text = "No video available";
+                    videoSelect.appendChild(option);
+                    noVideoAvailable = true;
+                }
+
+                const videoDownloadBtn = document.createElement("button");
+                videoDownloadBtn.innerText = "⬇️ Download Video";
+                videoDownloadBtn.onclick = () => {
+                    const format_id = videoSelect.value;
+                    if (format_id) download(format_id, "video");
+                };
+
+                videoWrapper.appendChild(videoLabel);
+                videoWrapper.appendChild(videoSelect);
+                videoWrapper.appendChild(videoDownloadBtn);
+
+                // Audio section
+                const audioWrapper = document.createElement("div");
+                const audioLabel = document.createElement("label");
+                audioLabel.innerText = "🎵 MP3:";
+                const audioSelect = document.createElement("select");
+                audioSelect.id = "audio-format-select";
+
+                const audioDownloadBtn = document.createElement("button");
+                audioDownloadBtn.innerText = "⬇️ Download MP3";
+                audioDownloadBtn.onclick = () => {
+                    const format_id = audioSelect.value;
+                    if (format_id) download(format_id, "audio");
+                };
+
+                if (data.video && data.video.audio.length > 0) {
+                    data.video.audio.forEach(format => {
+                        const option = document.createElement("option");
+                        option.value = escapeHtml(format.format_id);
+                        option.text = `${escapeHtml(format.abr || "Audio")} (${escapeHtml(format.size || "?")})`;
+                        audioSelect.appendChild(option);
+                    });
+                    audioWrapper.appendChild(audioLabel);
+                    audioWrapper.appendChild(audioSelect);
+                    audioWrapper.appendChild(audioDownloadBtn);
+                } else {
+                    const noMp3Msg = document.createElement("p");
+                    noMp3Msg.innerText = "🚫 No MP3 available";
+                    audioWrapper.appendChild(audioLabel);
+                    audioWrapper.appendChild(noMp3Msg);
+                }
+
+                row.appendChild(videoWrapper);
+                row.appendChild(audioWrapper);
+                formatsDiv.appendChild(row);
+                formatsDiv.scrollIntoView({ behavior: "smooth" });
+
+                        // Show force download if no video is available
+                if (noVideoAvailable) {
+                    document.getElementById("force-download").style.display = "block";
+                } else {
+                    document.getElementById("force-download").style.display = "none";
+                }
+            })
+            .catch(error => {
+                fetchBtn.disabled = false;
+                document.getElementById("loading").style.display = "none";
+                document.getElementById("download-status").innerText = "❌ Server error, please try again in a minute.";
+                console.error("❌ Error fetching formats:", error);
+            });
+        }
+
+        function forceDownload() {
+            const url = document.getElementById("url").value;
+            document.getElementById("download-status").innerText = "⏳ Force Downloading...";
+            document.getElementById("progress-container").style.display = "block";
+            document.getElementById("loading").style.display = "flex";
+
+            fetch("/download", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ url: url, force_download: true })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === "success" || data.message === "Download complete!") {
+                    const eventSource = new EventSource("/progress");
+                    handleProgress(eventSource, "video");
+                } else {
+                    document.getElementById("loading").style.display = "none";
+                    document.getElementById("download-status").innerText = `❌ Error: ${data.message || "Download failed."}`;
+                }
+            })
+            .catch(() => {
+                document.getElementById("loading").style.display = "none";
+                document.getElementById("download-status").innerText = "❌ Error: Unable to initiate download.";
+            });
+        }
+
+        function download(format_id, type = "video") {
+            const url = document.getElementById("url").value;
+            document.getElementById("download-status").innerText = "⏳ Downloading...";
+            document.getElementById("progress-container").style.display = "block";
+            document.getElementById("loading").style.display = "flex";
+
+            const endpoint = type === "audio" ? "/download_mp3" : "/download";
+
+            fetch(endpoint, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ url: url, format_id: format_id })
+            });
+
+            const eventSource = new EventSource("/progress");
+            handleProgress(eventSource, type);
+        }
+
+        function handleProgress(eventSource, type) {
+            let downloadSucceeded = false;
+        
+            eventSource.onmessage = function(event) {
+                const progressData = JSON.parse(event.data);
+                document.getElementById("progress-text").innerText = `🔄 ${progressData.status} - ${progressData.progress}`;
+                const percent = parseInt((progressData.progress || "").replace("%", "")) || 0;
+                document.getElementById("progress-bar").style.width = percent + "%";
+        
+                // Check for completion and set the success flag
+                if (progressData.progress === "100%" || progressData.status.toLowerCase().includes("finished")) {
+                    downloadSucceeded = true;
+                    document.getElementById("loading").style.display = "none";
+                    document.getElementById("download-status").innerText =
+                        type === "audio" ? "✅ MP3 Download Complete!" : "✅ Download Complete!";
+                    eventSource.close();
+                }
+            };
+        
+            eventSource.onerror = function () {
+                // Only show error if download never succeeded
+                if (!downloadSucceeded) {
+                    document.getElementById("loading").style.display = "none";
+                    document.getElementById("download-status").innerText = "❌ Server error. Try again later.";
+                }
+                eventSource.close();
+            };
+        }
+    
+        function toggleNav() {
+            const navLinks = document.getElementById("nav-links");
+            navLinks.classList.toggle("active");
+        }
+    </script>
+</body>
+</html>

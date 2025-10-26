@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: url-downloader
+    env: python
+    repo: https://github.com/DrasZil/URL-Downloader
+    branch: main
+    buildCommand: |
+      pip install -r requirements.txt
+      python -m playwright install chromium
+    startCommand: gunicorn app:app
+    plan: free
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: GUNICORN_CMD_ARGS
+        value: "--timeout 600 --threads 4"
